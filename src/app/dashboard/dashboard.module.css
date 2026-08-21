@@ -1,8 +1,5 @@
 .frame { min-height: 100vh; background: #f4f6fb; color: #171a2b; }
-.sidebar {
-  position: fixed; inset: 0 auto 0 0; width: 260px; padding: 28px 20px;
-  color: white; background: #0c1020; display: flex; flex-direction: column;
-}
+.sidebar { position: fixed; inset: 0 auto 0 0; width: 260px; padding: 28px 20px; color: white; background: #0c1020; display: flex; flex-direction: column; }
 .logo { padding: 4px 10px 30px; font-weight: 900; font-size: 22px; letter-spacing: -.04em; }
 .logo span { color: var(--cyan); }
 .nav { display: grid; gap: 6px; }
@@ -32,13 +29,25 @@
 .fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
 .full { grid-column: 1 / -1; }
 .field { display: grid; gap: 8px; font-size: 14px; font-weight: 700; }
-.field input, .field textarea {
-  width: 100%; padding: 13px 14px; border: 1px solid #dfe3ee; border-radius: 11px;
-  background: white; color: #171a2b; font: inherit; outline: none;
-}
+.field input, .field textarea { width: 100%; padding: 13px 14px; border: 1px solid #dfe3ee; border-radius: 11px; background: white; color: #171a2b; font: inherit; outline: none; }
 .field textarea { min-height: 120px; resize: vertical; }
 .field input:focus, .field textarea:focus { border-color: #6900ff; box-shadow: 0 0 0 3px rgba(105,0,255,.08); }
-.actions { display: flex; justify-content: flex-end; gap: 12px; }
+.field small { color: #7b8298; font-weight: 500; }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: 18px; }
+.alertSuccess, .alertError { max-width: 900px; padding: 14px 16px; margin-bottom: 20px; border-radius: 12px; font-weight: 700; }
+.alertSuccess { background: #eafbf2; color: #087443; }
+.alertError { background: #fff0f2; color: #b4233c; }
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: 15px 12px; border-bottom: 1px solid #edf0f6; text-align: left; }
+.table th { color: #7b8298; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.table td { font-size: 14px; }
+.table td:last-child { text-align: right; }
+.table td:last-child a { color: #6900ff; font-weight: 800; }
+.status { display: inline-flex; padding: 6px 9px; border-radius: 999px; background: #f0e9ff; color: #6900ff; font-size: 12px; font-weight: 800; }
+.recentList { display: grid; margin-top: 18px; }
+.recentList a { padding: 15px 0; border-top: 1px solid #edf0f6; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.recentList span { color: #7b8298; font-size: 13px; }
 @media (max-width: 900px) {
   .sidebar { position: static; width: 100%; min-height: auto; }
   .nav { grid-template-columns: repeat(3, 1fr); }
