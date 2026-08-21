@@ -36,8 +36,8 @@ export default async function NewPromotionPage({ searchParams }: NewPromotionPag
             </label>
             <label className={`${styles.field} ${styles.full}`}>
               Foto do produto
-              <input type="file" name="productImage" accept="image/png,image/jpeg,image/webp" disabled />
-              <small>O envio de imagens será ativado na próxima etapa.</small>
+              <input type="file" name="productImage" accept="image/png,image/jpeg,image/webp" required />
+              <small>JPG, PNG ou WEBP, com até 5 MB.</small>
             </label>
           </div>
         </section>
