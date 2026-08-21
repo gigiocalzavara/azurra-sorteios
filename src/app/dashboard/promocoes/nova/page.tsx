@@ -1,7 +1,14 @@
 import Link from "next/link";
+import { createPromotion } from "./actions";
 import styles from "../../dashboard.module.css";
 
-export default function NewPromotionPage() {
+type NewPromotionPageProps = {
+  searchParams: Promise<{ error?: string }>;
+};
+
+export default async function NewPromotionPage({ searchParams }: NewPromotionPageProps) {
+  const { error } = await searchParams;
+
   return (
     <main className={styles.main}>
       <div className={styles.heading}>
@@ -10,7 +17,8 @@ export default function NewPromotionPage() {
           <p>Cadastre o produto e configure a distribuição das cotas.</p>
         </div>
       </div>
-      <form className={styles.form}>
+      {error ? <div className={styles.alertError}>{error}</div> : null}
+      <form className={styles.form} action={createPromotion}>
         <section className={styles.section}>
           <h2>Informações da promoção</h2>
           <div className={styles.fields}>
@@ -28,7 +36,8 @@ export default function NewPromotionPage() {
             </label>
             <label className={`${styles.field} ${styles.full}`}>
               Foto do produto
-              <input type="file" name="productImage" accept="image/png,image/jpeg,image/webp" />
+              <input type="file" name="productImage" accept="image/png,image/jpeg,image/webp" disabled />
+              <small>O envio de imagens será ativado na próxima etapa.</small>
             </label>
           </div>
         </section>
@@ -37,7 +46,7 @@ export default function NewPromotionPage() {
           <div className={styles.fields}>
             <label className={styles.field}>
               Quantidade de cotas
-              <input type="number" name="quotaQuantity" min="1" placeholder="100" required />
+              <input type="number" name="quotaQuantity" min="1" max="100000" placeholder="100" required />
             </label>
             <label className={styles.field}>
               Valor por cota
@@ -48,8 +57,8 @@ export default function NewPromotionPage() {
               <input type="number" name="minimumPerOrder" min="1" defaultValue="1" required />
             </label>
             <label className={styles.field}>
-              Reserva por
-              <input type="number" name="reservationMinutes" min="5" defaultValue="30" required />
+              Reserva em minutos
+              <input type="number" name="reservationMinutes" min="5" max="1440" defaultValue="30" required />
             </label>
           </div>
         </section>
