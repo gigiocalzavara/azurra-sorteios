@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  app:
+    image: ghcr.io/gigiocalzavara/azurra-sorteios:latest
+    networks:
+      - azurranet
+    environment:
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=azurranet
+        - traefik.http.routers.azurra-sorteios.rule=Host(`sorteios.azurratech.com.br`)
+        - traefik.http.routers.azurra-sorteios.entrypoints=websecure
+        - traefik.http.routers.azurra-sorteios.tls=true
+        - traefik.http.routers.azurra-sorteios.tls.certresolver=letsencryptresolver
+        - traefik.http.services.azurra-sorteios.loadbalancer.server.port=3000
+
+networks:
+  azurranet:
+    external: true
