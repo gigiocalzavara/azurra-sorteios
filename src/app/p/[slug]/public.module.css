@@ -1,0 +1,32 @@
+.page { min-height: 100vh; background: #f6f5fa; color: #17182a; }
+.brand { padding: 20px clamp(20px, 5vw, 64px); color: white; background: #101326; font-size: 21px; font-weight: 900; letter-spacing: -.04em; }
+.shell { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 64px; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr); gap: 28px; align-items: start; }
+.product, .purchase { overflow: hidden; border: 1px solid #e3e2ea; border-radius: 24px; background: white; box-shadow: 0 16px 50px rgba(23,24,42,.07); }
+.image { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: #eceaf2; }
+.details { padding: 28px; }
+.details h1 { max-width: none; margin: 0 0 14px; color: #17182a; font-size: clamp(30px, 4vw, 46px); line-height: 1.05; }
+.details p { color: #686c80; line-height: 1.65; white-space: pre-line; }
+.condition { margin-top: 22px; padding: 16px; border-radius: 14px; background: #f3edff; color: #5218a8; }
+.progressLabel { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; font-size: 13px; font-weight: 800; }
+.progress { height: 10px; margin-top: 9px; overflow: hidden; border-radius: 99px; background: #ececf2; }
+.progress div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6900ff, #00bfd1); }
+.purchase { padding: 28px; }
+.purchase h2 { margin: 0 0 7px; font-size: 24px; }
+.price { margin-bottom: 24px; color: #6900ff; font-size: 22px; font-weight: 900; }
+.form { display: grid; gap: 16px; }
+.field { display: grid; gap: 7px; font-size: 13px; font-weight: 800; }
+.field input { width: 100%; padding: 14px; border: 1px solid #dcdde7; border-radius: 12px; color: #17182a; background: white; font: inherit; }
+.summary { display: flex; justify-content: space-between; padding: 15px 0; border-top: 1px solid #ececf2; font-weight: 800; }
+.button { padding: 15px 18px; border: 0; border-radius: 12px; color: white; background: #6900ff; font-weight: 900; cursor: pointer; }
+.button:disabled { opacity: .55; cursor: wait; }
+.error { padding: 12px; border-radius: 10px; color: #a82036; background: #fff0f2; font-size: 13px; font-weight: 700; }
+.payment { display: grid; gap: 18px; }
+.success { color: #087443; font-weight: 900; }
+.numbers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.number { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 50%; color: white; background: #17182a; font-weight: 900; }
+.qr { width: 220px; height: 220px; margin: 0 auto; }
+.code { width: 100%; min-height: 90px; padding: 12px; border: 1px solid #dddde7; border-radius: 10px; color: #4b4e60; background: #f8f8fb; font-size: 11px; word-break: break-all; }
+.copy { padding: 13px; border: 1px solid #6900ff; border-radius: 11px; color: #6900ff; background: white; font-weight: 900; cursor: pointer; }
+.notice { color: #73778b; font-size: 12px; line-height: 1.5; }
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } .shell { padding-top: 24px; } }
