@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  app:
+    image: ghcr.io/gigiocalzavara/azurra-sorteios:latest
+    networks:
+      - azurranet
+    environment:
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=azurranet
+        - traefik.http.routers.azurra-sorteios.rule=Host(`sorteios.azurratech.com.br`)
+        - traefik.http.routers.azurra-sorteios.entrypoints=websecure
+        - traefik.http.routers.azurra-sorteios.tls=true
+        - traefik.http.routers.azurra-sorteios.tls.certresolver=letsencryptresolver
+        - traefik.http.services.azurra-sorteios.loadbalancer.server.port=3000
+
+networks:
+  azurranet:
+    external: true
