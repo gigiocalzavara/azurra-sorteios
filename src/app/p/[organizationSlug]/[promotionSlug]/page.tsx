@@ -25,6 +25,6 @@ export default async function Page({params}:Props){
     <div className={styles.progressMeta}><span>{progress}% reservado</span><span>{p.quotas.available} disponíveis</span></div><div className={styles.progress}><i style={{width:`${progress}%`}}/></div>
     <PurchaseForm organizationSlug={organizationSlug} promotionSlug={promotionSlug} quotaPrice={Number(p.quota_price)} minimum={p.minimum_per_order} maximum={Math.min(p.maximum_per_order??p.quotas.available,p.quotas.available)} reservationMinutes={p.reservation_minutes} disabled={p.status!=="published"||p.quotas.available<p.minimum_per_order}/>
    </div>
-  </section><footer>Pagamento por PIX • Cotas atribuídas aleatoriamente</footer>
+  </section><footer className={styles.footer}>Pagamento por PIX • Cotas atribuídas aleatoriamente</footer>
  </div></main>;
 }
