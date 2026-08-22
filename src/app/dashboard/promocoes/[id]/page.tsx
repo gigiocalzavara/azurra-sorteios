@@ -1,0 +1,6 @@
+import Link from "next/link";
+import {notFound} from "next/navigation";
+import {createClient} from "@/lib/supabase/server";
+import styles from "../../dashboard.module.css";
+import {publishPromotion} from "./actions";
+export default async function Page({params}:{params:Promise<{id:string}>}){const {id}=await params;const supabase=await createClient();const {data:p}=await supabase.from("promotions").select("*,organizations(name,slug,pix_key)").eq("id",id).maybeSingle();if(!p)notFound();const org=Array.isArray(p.organizations)?p.organizations[0]:p.organizations;const url=`/p/${org.slug}/${p.slug}`;const {count}=await supabase.from("quotas").select("id",{count:"exact",head:true}).eq("promotion_id",id).eq("status","paid");return <main className={styles.main}><div className={styles.heading}><div><h1>{p.name}</h1><p>{count??0} de {p.quota_quantity} cotas pagas.</p></div><Link className={styles.primary} href="/dashboard/promocoes">Voltar</Link></div><section className={styles.panel}><p><strong>Status:</strong> {p.status}</p><p><strong>PIX:</strong> {org.pix_key||"Não configurado"}</p>{p.status==="draft"?<form action={publishPromotion}><input type="hidden" name="id" value={id}/><button className={styles.primary} type="submit">Publicar promoção</button></form>:<p><strong>Link público:</strong> <Link href={url}>{url}</Link></p>}</section></main>}
