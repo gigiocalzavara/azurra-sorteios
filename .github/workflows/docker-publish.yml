@@ -43,3 +43,21 @@ jobs:
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - id: whatsapp-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/gigiocalzavara/azurra-sorteios-whatsapp
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.whatsapp
+          push: true
+          tags: ${{ steps.whatsapp-meta.outputs.tags }}
+          labels: ${{ steps.whatsapp-meta.outputs.labels }}
+          cache-from: type=gha,scope=whatsapp
+          cache-to: type=gha,mode=max,scope=whatsapp

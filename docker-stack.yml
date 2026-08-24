@@ -9,6 +9,8 @@ services:
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      WHATSAPP_GATEWAY_URL: http://whatsapp:3100
+      WHATSAPP_GATEWAY_TOKEN: ${WHATSAPP_GATEWAY_TOKEN}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
@@ -35,6 +37,25 @@ services:
         - traefik.http.routers.azurra-sorteios.tls.certresolver=letsencryptresolver
         - traefik.http.services.azurra-sorteios.loadbalancer.server.port=3000
 
+  whatsapp:
+    image: ghcr.io/gigiocalzavara/azurra-sorteios-whatsapp:latest
+    networks:
+      - azurranet
+    environment:
+      PORT: 3100
+      GATEWAY_TOKEN: ${WHATSAPP_GATEWAY_TOKEN}
+      SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - azurra_sorteios_whatsapp_sessions:/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
 networks:
   azurranet:
     external: true
+
+volumes:
+  azurra_sorteios_whatsapp_sessions:
