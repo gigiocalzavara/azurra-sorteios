@@ -19,6 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <nav className={styles.nav}>
           <Link href="/dashboard">Visão geral</Link>
           <Link href="/dashboard/promocoes">Promoções</Link>
+          <Link href="/dashboard/pagina-publica">Página pública</Link>
           <Link href="/dashboard/pagamentos">Pagamentos</Link>
           <Link href="/dashboard/participantes">Participantes</Link>
           <Link href="/dashboard/sorteios">Sorteios</Link>

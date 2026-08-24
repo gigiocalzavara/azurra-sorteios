@@ -45,6 +45,12 @@
 .table td:last-child { text-align: right; }
 .table td:last-child a { color: #6900ff; font-weight: 800; }
 .status { display: inline-flex; padding: 6px 9px; border-radius: 999px; background: #f0e9ff; color: #6900ff; font-size: 12px; font-weight: 800; }
+.smallButton { padding: 9px 12px; border: 0; border-radius: 9px; background: #6900ff; color: white; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.winner { margin-bottom: 24px; padding: 34px; border-radius: 20px; text-align: center; color: white; background: linear-gradient(135deg,#6900ff,#3d00a3); }
+.winner span { display: block; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; opacity: .8; }
+.winner strong { display: block; margin: 10px 0; font-size: 72px; line-height: 1; }
+.winner h2 { margin: 8px 0 4px; font-size: 25px; }
+.winner p { margin: 0; opacity: .8; }
 .recentList { display: grid; margin-top: 18px; }
 .recentList a { padding: 15px 0; border-top: 1px solid #edf0f6; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .recentList span { color: #7b8298; font-size: 13px; }
