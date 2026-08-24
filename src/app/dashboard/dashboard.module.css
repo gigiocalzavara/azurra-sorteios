@@ -29,7 +29,7 @@
 .fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
 .full { grid-column: 1 / -1; }
 .field { display: grid; gap: 8px; font-size: 14px; font-weight: 700; }
-.field input, .field textarea { width: 100%; padding: 13px 14px; border: 1px solid #dfe3ee; border-radius: 11px; background: white; color: #171a2b; font: inherit; outline: none; }
+.field input, .field textarea, .field select { width: 100%; padding: 13px 14px; border: 1px solid #dfe3ee; border-radius: 11px; background: white; color: #171a2b; font: inherit; outline: none; }
 .field textarea { min-height: 120px; resize: vertical; }
 .field input:focus, .field textarea:focus { border-color: #6900ff; box-shadow: 0 0 0 3px rgba(105,0,255,.08); }
 .field small { color: #7b8298; font-weight: 500; }

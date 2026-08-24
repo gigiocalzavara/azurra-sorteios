@@ -4,16 +4,20 @@ import {Check,Copy,LoaderCircle,ShieldCheck} from "lucide-react";
 import {QRCodeSVG} from "qrcode.react";
 import {createClient} from "@/lib/supabase/client";
 import styles from "./payment.module.css";
-type Order={status:string;quota_numbers:number[];total_amount:number;payment_reported_at:string|null;promotion:{name:string};pix:{key:string|null;receiver_name:string|null;receiver_city:string|null}};
-const money=(v:number)=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"}),field=(id:string,v:string)=>`${id}${String(v.length).padStart(2,"0")}${v}`;
+
+type Order={status:string;quota_numbers:number[];total_amount:number;payment_reported_at:string|null;promotion:{name:string};pix:{key:string|null;key_type:string|null;receiver_name:string|null;receiver_city:string|null}};
+const money=(v:number)=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const field=(id:string,v:string)=>`${id}${String(v.length).padStart(2,"0")}${v}`;
 function crc16(s:string){let crc=0xffff;for(let i=0;i<s.length;i++){crc^=s.charCodeAt(i)<<8;for(let b=0;b<8;b++)crc=(crc&0x8000)?((crc<<1)^0x1021)&0xffff:(crc<<1)&0xffff}return crc.toString(16).toUpperCase().padStart(4,"0")}
-function pix(key:string,amount:number,name?:string|null,city?:string|null){const clean=(v:string,f:string,m:number)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9 ]/g,"").toUpperCase().slice(0,m)||f,merchant=field("00","BR.GOV.BCB.PIX")+field("01",key),base=field("00","01")+field("26",merchant)+field("52","0000")+field("53","986")+field("54",amount.toFixed(2))+field("58","BR")+field("59",clean(name||"RECEBEDOR","RECEBEDOR",25))+field("60",clean(city||"CIDADE","CIDADE",15))+field("62",field("05","***"))+"6304";return base+crc16(base)}
+function normalizeKey(key:string,type?:string|null){const value=key.trim();if(type==="phone"){const digits=value.replace(/\D/g,"");return `+${digits.startsWith("55")?digits:`55${digits}`}`}if(type==="cpf"||type==="cnpj")return value.replace(/\D/g,"");if(type==="email")return value.toLowerCase();return value.toLowerCase()}
+function pix(key:string,amount:number,name?:string|null,city?:string|null,type?:string|null){key=normalizeKey(key,type);const clean=(v:string,f:string,m:number)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9 ]/g,"").toUpperCase().slice(0,m)||f,merchant=field("00","BR.GOV.BCB.PIX")+field("01",key),base=field("00","01")+field("26",merchant)+field("52","0000")+field("53","986")+field("54",amount.toFixed(2))+field("58","BR")+field("59",clean(name||"RECEBEDOR","RECEBEDOR",25))+field("60",clean(city||"CIDADE","CIDADE",15))+field("62",field("05","***"))+"6304";return base+crc16(base)}
+
 export function PaymentClient({token}:{token:string}){
  const [phone,setPhone]=useState(""),[order,setOrder]=useState<Order|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[copied,setCopied]=useState(false);
  async function load(value:string){setLoading(true);setError("");const normalized=`+55${value.replace(/\D/g,"").replace(/^55/,"")}`,{data,error:err}=await createClient().rpc("get_public_order",{order_token:token,participant_phone:normalized});if(err||!data){setError("Pedido não encontrado. Confira o WhatsApp informado.");setOrder(null)}else{setPhone(normalized);setOrder(data as Order);localStorage.setItem(`azurra-order-${token}`,normalized)}setLoading(false)}
  useEffect(()=>{const saved=localStorage.getItem(`azurra-order-${token}`);if(saved)void load(saved);else setLoading(false)},[token]);
  async function validate(e:FormEvent<HTMLFormElement>){e.preventDefault();await load(String(new FormData(e.currentTarget).get("phone")||""))}
- const payload=order?.pix.key?pix(order.pix.key,Number(order.total_amount),order.pix.receiver_name,order.pix.receiver_city):"";
+ const payload=order?.pix.key?pix(order.pix.key,Number(order.total_amount),order.pix.receiver_name,order.pix.receiver_city,order.pix.key_type):"";
  async function copy(){await navigator.clipboard.writeText(payload);setCopied(true);setTimeout(()=>setCopied(false),1600)}
  async function report(){if(!order)return;setLoading(true);const {error:err}=await createClient().rpc("report_public_payment",{order_token:token,participant_phone:phone,payer_name:null});if(err)setError(err.message);else setOrder({...order,status:"payment_reported",payment_reported_at:new Date().toISOString()});setLoading(false)}
  if(loading&&!order)return <main className={styles.page}><LoaderCircle className={styles.spin}/></main>;
