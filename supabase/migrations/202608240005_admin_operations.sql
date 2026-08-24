@@ -1,5 +1,7 @@
 -- Operações administrativas de pagamentos, configurações e sorteio.
 
+drop policy if exists "admins update own organization" on public.organizations;
+
 create policy "admins update own organization"
 on public.organizations for update to authenticated
 using (public.is_superadmin() or public.member_role(id) in ('superadmin','admin'))
@@ -31,7 +33,9 @@ begin
  select * into v_promotion from public.promotions where id=target_promotion_id for update;
  if not found then raise exception 'Promoção não encontrada.'; end if;
  if not (public.is_superadmin() or public.member_role(v_promotion.organization_id) in ('superadmin','admin')) then raise exception 'Sem permissão.'; end if;
- if v_promotion.status<>'ready_to_draw' then raise exception 'O sorteio só é liberado com 100% das cotas pagas.'; end if;
+ if v_promotion.status<>'ready_to_draw' then
+   raise exception using message='O sorteio só é liberado quando todas as cotas estiverem pagas.';
+ end if;
  if exists(select 1 from public.draws where promotion_id=target_promotion_id) then raise exception 'Esta promoção já foi sorteada.'; end if;
  select q.* into v_quota from public.quotas q where q.promotion_id=target_promotion_id and q.status='paid' order by gen_random_uuid() limit 1;
  select part.* into v_participant from public.orders o join public.participants part on part.id=o.participant_id where o.id=v_quota.order_id;
