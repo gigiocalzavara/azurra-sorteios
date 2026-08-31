@@ -89,11 +89,26 @@ app.get("/sessions/:org/groups/:groupId/participants", async (req, res) => {
   const current = connected(req, res); if (!current) return;
   try {
     const metadata = await current.sock.groupMetadata(req.params.groupId);
-    const contacts = (metadata.participants || []).map((participant) => {
-      const source = participant.phoneNumber || participant.id;
-      const digits = String(source).split("@")[0].split(":")[0].replace(/\D/g, "");
-      return { jid: participant.id, phone: digits ? `+${digits}` : "", name: participant.notify || participant.name || null, admin: participant.admin || null };
-    }).filter((contact) => contact.phone && contact.phone.slice(1) !== current.phone);
+    const contacts = [];
+    for (const participant of metadata.participants || []) {
+      const id = String(participant.id || "");
+      const lid = id.endsWith("@lid") ? id : participant.lid || null;
+      let phoneJid = participant.phoneNumber || (id.endsWith("@s.whatsapp.net") || id.endsWith("@c.us") ? id : null);
+      if (!phoneJid && lid) {
+        try { phoneJid = await current.sock.signalRepository.lidMapping.getPNForLID(lid); } catch {}
+      }
+      const digits = phoneJid ? String(phoneJid).split("@")[0].split(":")[0].replace(/\D/g, "") : "";
+      if (digits && digits === current.phone) continue;
+      contacts.push({
+        jid: id,
+        phone: digits ? `+${digits}` : null,
+        username: participant.username || null,
+        lid,
+        name: participant.notify || participant.name || participant.verifiedName || null,
+        admin: participant.admin || null,
+        contactMode: digits ? "azurra_leads" : "manual"
+      });
+    }
     res.json({ group: { id: metadata.id, subject: metadata.subject }, contacts });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
