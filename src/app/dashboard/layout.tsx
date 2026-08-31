@@ -22,6 +22,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Link href="/dashboard/pagina-publica">Página pública</Link>
           <Link href="/dashboard/pagamentos">Pagamentos</Link>
           <Link href="/dashboard/participantes">Participantes</Link>
+          <Link href="/dashboard/captura-leads">Captura de leads</Link>
           <Link href="/dashboard/sorteios">Sorteios</Link>
           <Link href="/dashboard/comunicacao">Comunicação</Link>
           <Link href="/dashboard/configuracoes">Configurações</Link>

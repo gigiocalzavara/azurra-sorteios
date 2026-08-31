@@ -61,3 +61,21 @@ jobs:
           labels: ${{ steps.whatsapp-meta.outputs.labels }}
           cache-from: type=gha,scope=whatsapp
           cache-to: type=gha,mode=max,scope=whatsapp
+
+      - id: lead-capture-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/gigiocalzavara/azurra-sorteios-lead-capture
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.lead-capture
+          push: true
+          tags: ${{ steps.lead-capture-meta.outputs.tags }}
+          labels: ${{ steps.lead-capture-meta.outputs.labels }}
+          cache-from: type=gha,scope=lead-capture
+          cache-to: type=gha,mode=max,scope=lead-capture
