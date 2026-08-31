@@ -11,6 +11,8 @@ services:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       WHATSAPP_GATEWAY_URL: http://whatsapp:3100
       WHATSAPP_GATEWAY_TOKEN: ${WHATSAPP_GATEWAY_TOKEN}
+      LEAD_CAPTURE_GATEWAY_URL: http://lead-capture:3200
+      LEAD_CAPTURE_GATEWAY_TOKEN: ${LEAD_CAPTURE_GATEWAY_TOKEN}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
@@ -53,9 +55,24 @@ services:
       restart_policy:
         condition: on-failure
 
+  lead-capture:
+    image: ghcr.io/gigiocalzavara/azurra-sorteios-lead-capture:latest
+    networks:
+      - azurranet
+    environment:
+      PORT: 3200
+      GATEWAY_TOKEN: ${LEAD_CAPTURE_GATEWAY_TOKEN}
+    volumes:
+      - azurra_sorteios_lead_capture_sessions:/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
 networks:
   azurranet:
     external: true
 
 volumes:
   azurra_sorteios_whatsapp_sessions:
+  azurra_sorteios_lead_capture_sessions:
