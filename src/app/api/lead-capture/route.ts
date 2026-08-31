@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-type Contact = { phone: string; name?: string | null };
+type Contact = { phone?: string | null; username?: string | null; lid?: string | null; name?: string | null };
+type NormalizedContact = {
+  identity_key: string;
+  identity_kind: "phone" | "username" | "lid";
+  phone_e164: string | null;
+  whatsapp_username: string | null;
+  whatsapp_lid: string | null;
+  display_name: string | null;
+};
 
 async function context(org: string) {
   const supabase = await createClient();
@@ -23,9 +31,9 @@ async function gateway(path: string, method = "GET") {
   } catch { return { data: null, error: "Serviço de captura indisponível." }; }
 }
 
-const csvCell = (value: unknown) => {
+const csvCell = (value: unknown, protect = true) => {
   const text = String(value ?? "");
-  const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  const safe = protect && /^[=+\-@]/.test(text) ? `'${text}` : text;
   return `"${safe.replace(/"/g, '""')}"`;
 };
 
@@ -34,17 +42,19 @@ export async function GET(req: NextRequest) {
   const action = req.nextUrl.searchParams.get("action") || "status";
   const ctx = await context(org);
   if (!ctx) return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
-  if (action === "export") {
+  if (action === "export_azurra") {
     const { data, error } = await ctx.supabase.from("captured_leads")
-      .select("display_name,phone_e164,consent_status,first_captured_at,last_captured_at,captured_lead_sources(group_name)")
-      .eq("organization_id", org).order("last_captured_at", { ascending: false });
+      .select("display_name,phone_e164,whatsapp_username,whatsapp_lid,consent_status,captured_lead_sources(group_name)")
+      .eq("organization_id", org).not("phone_e164", "is", null).neq("identity_kind", "legacy_unverified")
+      .order("last_captured_at", { ascending: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    const lines = [["Nome", "WhatsApp", "Consentimento", "Grupos de origem", "Primeira captura", "Última captura"].map(csvCell).join(";")];
+    const lines = [["nome", "telefone", "origem", "username", "whatsapp_lid", "consentimento"].map((value) => csvCell(value)).join(";")];
     for (const lead of data || []) {
       const groups = (lead.captured_lead_sources || []).map((source: { group_name: string }) => source.group_name).join(", ");
-      lines.push([lead.display_name, lead.phone_e164, lead.consent_status, groups, lead.first_captured_at, lead.last_captured_at].map(csvCell).join(";"));
+      const phoneDigits = String(lead.phone_e164 || "").replace(/\D/g, "");
+      lines.push([csvCell(lead.display_name), csvCell(phoneDigits, false), csvCell(groups), csvCell(lead.whatsapp_username), csvCell(lead.whatsapp_lid), csvCell(lead.consent_status)].join(";"));
     }
-    return new NextResponse("\uFEFF" + lines.join("\r\n"), { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": 'attachment; filename="leads-whatsapp.csv"' } });
+    return new NextResponse("\uFEFF" + lines.join("\r\n"), { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": 'attachment; filename="azurra-leads-importacao.csv"' } });
   }
   const groupId = req.nextUrl.searchParams.get("groupId");
   const path = action === "participants" && groupId
@@ -66,32 +76,38 @@ export async function POST(req: NextRequest) {
   if (body.action !== "import") return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
   const groupId = String(body.groupId || ""), groupName = String(body.groupName || "").trim();
   const contacts = (Array.isArray(body.contacts) ? body.contacts : []) as Contact[];
-  const normalized = [...new Map<string, { phone_e164: string; display_name: string | null }>(contacts.map((contact) => {
+  const normalized = [...new Map<string, NormalizedContact>(contacts.map((contact) => {
     const digits = String(contact.phone || "").replace(/\D/g, "");
-    const phone = digits ? `+${digits}` : "";
-    return [phone, { phone_e164: phone, display_name: contact.name?.trim() || null }] as const;
-  }).filter(([phone]) => /^\+[1-9][0-9]{7,14}$/.test(phone))).values()];
-  if (!groupId || !groupName || !normalized.length) return NextResponse.json({ error: "Nenhum contato válido selecionado" }, { status: 400 });
-  const phones = normalized.map((contact) => contact.phone_e164);
-  const { data: existing } = await ctx.supabase.from("captured_leads").select("phone_e164").eq("organization_id", org).in("phone_e164", phones);
-  const existingPhones = new Set((existing || []).map((item) => item.phone_e164));
+    const phone = /^\+[1-9][0-9]{7,14}$/.test(`+${digits}`) ? `+${digits}` : null;
+    const lid = String(contact.lid || "").endsWith("@lid") ? String(contact.lid) : null;
+    const usernameValue = String(contact.username || "").trim().replace(/^@/, "");
+    const username = usernameValue ? `@${usernameValue}` : null;
+    const identityKey = lid ? `lid:${lid}` : username ? `username:${username.toLowerCase()}` : phone ? `phone:${phone}` : "";
+    const identityKind = lid ? "lid" : username ? "username" : "phone";
+    return [identityKey, { identity_key: identityKey, identity_kind: identityKind, phone_e164: phone, whatsapp_username: username, whatsapp_lid: lid, display_name: contact.name?.trim() || null }] as const;
+  }).filter(([identityKey]) => Boolean(identityKey))).values()];
+  if (!groupId || !groupName || !normalized.length) return NextResponse.json({ error: "Nenhuma identidade válida selecionada" }, { status: 400 });
+  const identityKeys = normalized.map((contact) => contact.identity_key);
+  const { data: existing } = await ctx.supabase.from("captured_leads").select("identity_key").eq("organization_id", org).in("identity_key", identityKeys);
+  const existingKeys = new Set((existing || []).map((item) => item.identity_key));
   const now = new Date().toISOString();
   const { data: run, error: runError } = await ctx.supabase.from("lead_capture_runs").insert({
     organization_id: org, group_jid: groupId, group_name: groupName, found_count: Number(body.foundCount) || normalized.length,
-    imported_count: normalized.length, duplicate_count: existingPhones.size, created_by: ctx.user.id
+    imported_count: normalized.length, duplicate_count: existingKeys.size, created_by: ctx.user.id
   }).select("id").single();
   if (runError) return NextResponse.json({ error: runError.message }, { status: 400 });
   const { error: leadError } = await ctx.supabase.from("captured_leads").upsert(normalized.map((contact) => ({
     organization_id: org, ...contact, last_captured_at: now, created_by: ctx.user.id
-  })), { onConflict: "organization_id,phone_e164" });
+  })), { onConflict: "organization_id,identity_key" });
   if (leadError) return NextResponse.json({ error: leadError.message }, { status: 400 });
-  const { data: leads, error: readError } = await ctx.supabase.from("captured_leads").select("id,phone_e164").eq("organization_id", org).in("phone_e164", phones);
+  const { data: leads, error: readError } = await ctx.supabase.from("captured_leads").select("id,identity_key").eq("organization_id", org).in("identity_key", identityKeys);
   if (readError) return NextResponse.json({ error: readError.message }, { status: 400 });
   const { error: sourceError } = await ctx.supabase.from("captured_lead_sources").upsert((leads || []).map((lead) => ({
     lead_id: lead.id, group_jid: groupId, group_name: groupName, last_captured_at: now, capture_run_id: run.id
   })), { onConflict: "lead_id,group_jid" });
   if (sourceError) return NextResponse.json({ error: sourceError.message }, { status: 400 });
-  return NextResponse.json({ ok: true, imported: normalized.length, new: normalized.length - existingPhones.size, duplicates: existingPhones.size });
+  const azurraReady = normalized.filter((contact) => contact.phone_e164).length;
+  return NextResponse.json({ ok: true, imported: normalized.length, new: normalized.length - existingKeys.size, duplicates: existingKeys.size, azurraReady, manual: normalized.length - azurraReady });
 }
 
 export async function DELETE(req: NextRequest) {
