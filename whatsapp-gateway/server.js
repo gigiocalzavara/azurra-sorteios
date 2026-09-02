@@ -49,12 +49,15 @@ let working=false;
 async function processQueue(){
  if(!supabase||working)return;working=true;
  try{
-  const {data:events,error}=await supabase.from("communication_events").select("id,organization_id,promotion_id,rendered_message,media_url,attempts,status").in("status",["pending","manual_required"]).lt("attempts",3).lte("scheduled_at",new Date().toISOString()).order("scheduled_at").limit(10);
+  const {data:events,error}=await supabase.from("communication_events").select("id,organization_id,promotion_id,stage,rendered_message,media_url,attempts,status").in("status",["pending","manual_required"]).lt("attempts",3).lte("scheduled_at",new Date().toISOString()).order("scheduled_at").limit(10);
   if(error)throw error;
   for(const event of events||[]){
    const {data:settings,error:settingsError}=await supabase.from("promotion_communication_settings").select("mode,active,group_jid").eq("promotion_id",event.promotion_id).maybeSingle();
    if(settingsError){logger.error(settingsError);continue}
-   if(!settings?.active||settings.mode!=="automatic"||!settings.group_jid)continue;
+   if(!settings?.active||!settings.group_jid)continue;
+   // O vídeo do resultado é uma ação explícita do operador ao concluir o sorteio,
+   // portanto segue direto para o grupo mesmo quando as demais etapas exigem aprovação.
+   if(settings.mode!=="automatic"&&event.stage!=="result")continue;
    const session=sessions.get(safe(event.organization_id));
    if(!session?.sock||session.status!=="connected"){if(event.status==="pending")await supabase.from("communication_events").update({status:"manual_required",last_error:"WhatsApp desconectado; aguardando reconexão",updated_at:new Date().toISOString()}).eq("id",event.id);continue}
    try{
