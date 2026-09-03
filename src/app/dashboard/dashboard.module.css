@@ -1,4 +1,4 @@
-.frame { min-height: 100vh; background: #f4f6fb; color: #171a2b; }
+.frame { width: 100%; min-width: 0; min-height: 100vh; overflow-x: clip; background: #f4f6fb; color: #171a2b; }
 .sidebar { position: fixed; inset: 0 auto 0 0; width: 260px; padding: 28px 20px; color: white; background: #0c1020; display: flex; flex-direction: column; }
 .logo { padding: 4px 10px 30px; font-weight: 900; font-size: 22px; letter-spacing: -.04em; }
 .logo span { color: var(--cyan); }
@@ -7,7 +7,7 @@
 .nav a:hover { color: white; background: rgba(255,255,255,.07); }
 .logout { margin-top: auto; }
 .logout button { width: 100%; padding: 13px; border: 1px solid rgba(255,255,255,.12); color: white; background: transparent; border-radius: 11px; cursor: pointer; }
-.content { margin-left: 260px; min-height: 100vh; }
+.content { width: calc(100% - 260px); min-width: 0; margin-left: 260px; min-height: 100vh; }
 .topbar { height: 78px; padding: 0 36px; border-bottom: 1px solid #e4e7f0; background: white; display: flex; align-items: center; justify-content: space-between; }
 .topbar strong { font-size: 17px; }
 .user { color: #747b91; font-size: 14px; }
@@ -37,7 +37,7 @@
 .alertSuccess, .alertError { max-width: 900px; padding: 14px 16px; margin-bottom: 20px; border-radius: 12px; font-weight: 700; }
 .alertSuccess { background: #eafbf2; color: #087443; }
 .alertError { background: #fff0f2; color: #b4233c; }
-.tableWrap { overflow-x: auto; }
+.tableWrap { width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { padding: 15px 12px; border-bottom: 1px solid #edf0f6; text-align: left; }
 .table th { color: #7b8298; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
@@ -56,15 +56,36 @@
 .recentList a { padding: 15px 0; border-top: 1px solid #edf0f6; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .recentList span { color: #7b8298; font-size: 13px; }
 @media (max-width: 900px) {
-  .sidebar { position: static; width: 100%; min-height: auto; }
-  .nav { grid-template-columns: repeat(3, 1fr); }
-  .logout { margin-top: 20px; }
-  .content { margin-left: 0; }
+  .sidebar { position: static; width: 100%; min-height: auto; padding: 18px 20px 16px; }
+  .logo { padding: 0 2px 16px; font-size: 20px; }
+  .nav { display: flex; width: 100%; gap: 8px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; scroll-snap-type: x proximity; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { flex: 0 0 auto; padding: 10px 13px; border: 1px solid rgba(255,255,255,.09); background: rgba(255,255,255,.04); font-size: 14px; white-space: nowrap; scroll-snap-align: start; }
+  .logout { margin: 3px 0 0; }
+  .logout button { width: auto; padding: 9px 13px; font-size: 13px; }
+  .content { width: 100%; margin-left: 0; }
+  .topbar { height: auto; min-height: 64px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 620px) {
-  .topbar, .main { padding-left: 20px; padding-right: 20px; }
+  .sidebar { padding: 15px 16px 13px; }
+  .logo { padding-bottom: 13px; }
+  .topbar, .main { padding-left: 16px; padding-right: 16px; }
+  .topbar { gap: 10px; align-items: flex-start; flex-direction: column; padding-top: 14px; padding-bottom: 14px; }
+  .topbar strong { font-size: 15px; }
+  .user { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .main { padding-top: 24px; padding-bottom: 40px; }
   .heading { align-items: stretch; flex-direction: column; }
+  .heading h1 { font-size: 30px; line-height: 1.05; }
+  .heading p { font-size: 15px; line-height: 1.45; }
   .stats, .fields { grid-template-columns: 1fr; }
   .full { grid-column: auto; }
+  .panel, .section { padding: 16px; border-radius: 14px; }
+  .table { min-width: 600px; }
+  .table th, .table td { padding: 13px 10px; }
+  .winner { padding: 26px 16px; }
+  .winner strong { font-size: 56px; }
+  .actions { align-items: stretch; flex-direction: column; }
+  .actions .primary { width: 100%; }
+  .recentList a { align-items: flex-start; flex-direction: column; gap: 6px; }
 }
