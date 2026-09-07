@@ -58,8 +58,8 @@ export async function createPromotion(formData: FormData) {
   if (!user) redirect("/login");
 
   const { data: membership } = await supabase.from("organization_members").select("organization_id").eq("user_id", user.id).limit(1).maybeSingle();
-  if (!membership) fail("Usuário sem organização");
-  const organizationId = membership.organization_id;
+  const organizationId = membership?.organization_id;
+  if (!organizationId) fail("Usuário sem organização");
 
   const { data: validProducts } = await supabase.from("products").select("id").eq("organization_id", organizationId).eq("active", true).in("id", productIds);
   if ((validProducts || []).length !== new Set(productIds).size) fail("Há produtos inválidos na seleção");
