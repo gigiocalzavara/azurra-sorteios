@@ -52,7 +52,7 @@ export async function createPromotion(formData: FormData) {
   if (!parsed.success) {
     fail("Revise os campos informados");
   }
-  const data = parsed.data;
+  const data = parsed.data!;
 
   const productIds = formData.getAll("productIds").map(String).filter(Boolean);
   if (!productIds.length) {
@@ -63,7 +63,7 @@ export async function createPromotion(formData: FormData) {
   if (!(imageEntry instanceof File) || imageEntry.size === 0) {
     fail("Selecione a foto da campanha");
   }
-  const image = imageEntry;
+  const image = imageEntry as File;
 
   if (!types[image.type] || image.size > MAX) {
     fail("Use JPG, PNG ou WEBP de até 5 MB");
@@ -88,7 +88,7 @@ export async function createPromotion(formData: FormData) {
   if (!membership) {
     fail("Usuário sem organização");
   }
-  const organizationId = membership.organization_id;
+  const organizationId = membership!.organization_id;
 
   const { data: validProducts } = await supabase
     .from("products")
