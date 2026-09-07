@@ -12,17 +12,20 @@ const types: Record<string, string> = {
   "image/webp": "webp",
 };
 
+const optionalPositiveInt = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().int().min(1).optional(),
+);
+
 const schema = z.object({
-  name: z.string().trim().min(3).max(120),
-  description: z.string().trim().min(10).max(5000),
-  quotaQuantity: z.coerce.number().int().min(1).max(100000),
-  quotaPrice: z.coerce.number().positive(),
-  minimumPerOrder: z.coerce.number().int().min(1),
-  reservationMinutes: z.coerce.number().int().min(5).max(1440),
-  maximumPerParticipant: z
-    .union([z.coerce.number().int().min(1), z.literal("")])
-    .optional(),
-  postDrawPixAmount: z.coerce.number().min(0),
+  name: z.string().trim().min(3, "O nome da campanha precisa ter pelo menos 3 caracteres.").max(120),
+  description: z.string().trim().min(1, "Informe o texto da campanha.").max(5000),
+  quotaQuantity: z.coerce.number().int().min(1, "Informe a quantidade de cotas.").max(100000),
+  quotaPrice: z.coerce.number().positive("Informe um valor válido por cota."),
+  minimumPerOrder: z.coerce.number().int().min(1, "O mínimo por compra deve ser pelo menos 1."),
+  reservationMinutes: z.coerce.number().int().min(5, "A reserva deve durar pelo menos 5 minutos.").max(1440),
+  maximumPerParticipant: optionalPositiveInt,
+  postDrawPixAmount: z.coerce.number().min(0, "Informe o valor do PIX pós-sorteio."),
 });
 
 const slugify = (value: string) =>
@@ -45,28 +48,28 @@ export async function createPromotion(formData: FormData) {
     quotaPrice: formData.get("quotaPrice"),
     minimumPerOrder: formData.get("minimumPerOrder"),
     reservationMinutes: formData.get("reservationMinutes"),
-    maximumPerParticipant: formData.get("maximumPerParticipant") || "",
+    maximumPerParticipant: formData.get("maximumPerParticipant"),
     postDrawPixAmount: formData.get("postDrawPixAmount"),
   });
 
   if (!parsed.success) {
-    fail("Revise os campos informados");
+    fail(parsed.error.issues[0]?.message || "Revise os campos informados.");
   }
   const data = parsed.data!;
 
   const productIds = formData.getAll("productIds").map(String).filter(Boolean);
   if (!productIds.length) {
-    fail("Selecione pelo menos um produto");
+    fail("Selecione pelo menos um produto.");
   }
 
   const imageEntry = formData.get("campaignImage");
   if (!(imageEntry instanceof File) || imageEntry.size === 0) {
-    fail("Selecione a foto da campanha");
+    fail("Selecione a foto da campanha.");
   }
   const image = imageEntry as File;
 
   if (!types[image.type] || image.size > MAX) {
-    fail("Use JPG, PNG ou WEBP de até 5 MB");
+    fail("Use JPG, PNG ou WEBP de até 5 MB.");
   }
 
   const supabase = await createClient();
@@ -86,7 +89,7 @@ export async function createPromotion(formData: FormData) {
     .maybeSingle();
 
   if (!membership) {
-    fail("Usuário sem organização");
+    fail("Usuário sem organização.");
   }
   const organizationId = membership!.organization_id;
 
@@ -98,7 +101,7 @@ export async function createPromotion(formData: FormData) {
     .in("id", productIds);
 
   if ((validProducts || []).length !== new Set(productIds).size) {
-    fail("Há produtos inválidos na seleção");
+    fail("Há produtos inválidos na seleção.");
   }
 
   const id = crypto.randomUUID();
@@ -112,11 +115,10 @@ export async function createPromotion(formData: FormData) {
     });
 
   if (uploadError) {
-    fail("Não foi possível enviar a foto da campanha");
+    fail(`Não foi possível enviar a foto da campanha: ${uploadError.message}`);
   }
 
-  const url = supabase.storage.from("promotion-images").getPublicUrl(path).data
-    .publicUrl;
+  const url = supabase.storage.from("promotion-images").getPublicUrl(path).data.publicUrl;
 
   const { error } = await supabase.from("promotions").insert({
     id,
@@ -130,15 +132,14 @@ export async function createPromotion(formData: FormData) {
     quota_price: data.quotaPrice,
     minimum_per_order: data.minimumPerOrder,
     reservation_minutes: data.reservationMinutes,
-    maximum_per_participant:
-      data.maximumPerParticipant === "" ? null : data.maximumPerParticipant,
+    maximum_per_participant: data.maximumPerParticipant ?? null,
     post_draw_pix_amount: data.postDrawPixAmount,
     created_by: user.id,
   });
 
   if (error) {
     await supabase.storage.from("promotion-images").remove([path]);
-    fail("Não foi possível salvar a promoção");
+    fail(`Não foi possível salvar a promoção: ${error.message}`);
   }
 
   const links = productIds.map((product_id, index) => ({
@@ -152,7 +153,7 @@ export async function createPromotion(formData: FormData) {
     .insert(links);
 
   if (linkError) {
-    fail("Promoção criada, mas não foi possível vincular os produtos");
+    fail(`Promoção criada, mas não foi possível vincular os produtos: ${linkError.message}`);
   }
 
   revalidatePath("/dashboard");
