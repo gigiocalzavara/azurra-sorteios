@@ -9,9 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-
   if (!data.user) redirect("/login");
-
   return (
     <div className={styles.frame}>
       <aside className={styles.sidebar}>
@@ -19,6 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <nav className={styles.nav}>
           <Link href="/dashboard">Visão geral</Link>
           <Link href="/dashboard/promocoes">Promoções</Link>
+          <Link href="/dashboard/produtos">Produtos</Link>
           <Link href="/dashboard/pagina-publica">Página pública</Link>
           <Link href="/dashboard/pagamentos">Pagamentos</Link>
           <Link href="/dashboard/participantes">Participantes</Link>
@@ -27,17 +26,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Link href="/dashboard/comunicacao">Comunicação</Link>
           <Link href="/dashboard/configuracoes">Configurações</Link>
         </nav>
-        <form className={styles.logout} action={logout}>
-          <button type="submit">Sair do painel</button>
-        </form>
+        <form className={styles.logout} action={logout}><button type="submit">Sair do painel</button></form>
       </aside>
-      <section className={styles.content}>
-        <header className={styles.topbar}>
-          <strong>Painel administrativo</strong>
-          <span className={styles.user}>{data.user.email}</span>
-        </header>
-        {children}
-      </section>
+      <section className={styles.content}><header className={styles.topbar}><strong>Painel administrativo</strong><span className={styles.user}>{data.user.email}</span></header>{children}</section>
     </div>
   );
 }
