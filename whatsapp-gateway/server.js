@@ -1,78 +1,10 @@
-import express from "express";
-import QRCode from "qrcode";
-import pino from "pino";
-import makeWASocket,{DisconnectReason,fetchLatestBaileysVersion,useMultiFileAuthState} from "@whiskeysockets/baileys";
-import {createClient} from "@supabase/supabase-js";
-
-const app=express();
-app.use(express.json({limit:"2mb"}));
-const port=Number(process.env.PORT||3100);
-const token=process.env.GATEWAY_TOKEN||"";
-const sessions=new Map();
-const logger=pino({level:process.env.LOG_LEVEL||"info"});
-const safe=id=>String(id).replace(/[^a-zA-Z0-9_-]/g,"");
-const supabase=process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY
- ?createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}}):null;
-
-app.use((req,res,next)=>{if(!token||req.headers.authorization!==`Bearer ${token}`)return res.status(401).json({error:"unauthorized"});next()});
-
-async function connect(org){
- const id=safe(org),existing=sessions.get(id);
- if(existing?.status==="connected"||existing?.status==="connecting"||existing?.status==="qr")return existing;
- const state={status:"connecting",qr:null,phone:null,sock:null,groupCache:new Map()};sessions.set(id,state);
- const {state:auth,saveCreds}=await useMultiFileAuthState(`/data/${id}`);
- const {version}=await fetchLatestBaileysVersion();
- const sock=makeWASocket({version,auth,logger,printQRInTerminal:false,syncFullHistory:false,markOnlineOnConnect:false,cachedGroupMetadata:async jid=>state.groupCache.get(jid)});
- state.sock=sock;sock.ev.on("creds.update",saveCreds);
- sock.ev.on("groups.update",async updates=>{for(const update of updates){try{state.groupCache.set(update.id,await sock.groupMetadata(update.id))}catch{}}});
- sock.ev.on("connection.update",async update=>{
-  if(update.qr){state.qr=await QRCode.toDataURL(update.qr,{margin:1,width:320});state.status="qr"}
-  if(update.connection==="open"){state.status="connected";state.qr=null;state.phone=sock.user?.id?.split(":")[0]||null;logger.info({organization:id},"WhatsApp connected")}
-  if(update.connection==="close"){const code=update.lastDisconnect?.error?.output?.statusCode;state.status="disconnected";state.sock=null;logger.warn({organization:id,code},"WhatsApp disconnected");if(code!==DisconnectReason.loggedOut)setTimeout(()=>connect(id).catch(error=>logger.error(error)),3000)}
- });return state;
-}
-
-async function sendMessage(org,jid,text,mediaUrl){
- const session=sessions.get(safe(org));if(!session?.sock||session.status!=="connected")throw new Error("WhatsApp desconectado");
- let payload={text};if(mediaUrl)payload={video:{url:mediaUrl},caption:text};
- return session.sock.sendMessage(jid,payload);
-}
-
-app.get("/health",(_,res)=>res.json({ok:true}));
-app.post("/sessions/:org/connect",async(req,res)=>{try{const s=await connect(req.params.org);res.json({status:s.status,qr:s.qr,phone:s.phone})}catch(error){res.status(500).json({error:error.message})}});
-app.get("/sessions/:org/status",(req,res)=>{const s=sessions.get(safe(req.params.org));res.json({status:s?.status||"disconnected",qr:s?.qr||null,phone:s?.phone||null})});
-app.delete("/sessions/:org",async(req,res)=>{const id=safe(req.params.org),s=sessions.get(id);try{await s?.sock?.logout()}catch{}sessions.delete(id);res.json({ok:true})});
-app.get("/sessions/:org/groups",async(req,res)=>{const s=sessions.get(safe(req.params.org));if(!s?.sock||s.status!=="connected")return res.status(409).json({error:"WhatsApp desconectado"});try{const groups=await s.sock.groupFetchAllParticipating();res.json(Object.values(groups).map(g=>({id:g.id,subject:g.subject,participants:g.participants?.length||0})).sort((a,b)=>a.subject.localeCompare(b.subject)))}catch(error){res.status(500).json({error:error.message})}});
-app.post("/sessions/:org/send",async(req,res)=>{try{const result=await sendMessage(req.params.org,req.body.jid,req.body.text,req.body.mediaUrl);res.json({ok:true,messageId:result?.key?.id})}catch(error){res.status(500).json({error:error.message})}});
-
-let working=false;
-async function processQueue(){
- if(!supabase||working)return;working=true;
- try{
-  const {data:events,error}=await supabase.from("communication_events").select("id,organization_id,promotion_id,stage,rendered_message,media_url,attempts,status").in("status",["pending","manual_required"]).lt("attempts",3).lte("scheduled_at",new Date().toISOString()).order("scheduled_at").limit(10);
-  if(error)throw error;
-  for(const event of events||[]){
-   const {data:settings,error:settingsError}=await supabase.from("promotion_communication_settings").select("mode,active,group_jid").eq("promotion_id",event.promotion_id).maybeSingle();
-   if(settingsError){logger.error(settingsError);continue}
-   if(!settings?.active||!settings.group_jid)continue;
-   // O vídeo do resultado é uma ação explícita do operador ao concluir o sorteio,
-   // portanto segue direto para o grupo mesmo quando as demais etapas exigem aprovação.
-   if(settings.mode!=="automatic"&&event.stage!=="result")continue;
-   const session=sessions.get(safe(event.organization_id));
-   if(!session?.sock||session.status!=="connected"){if(event.status==="pending")await supabase.from("communication_events").update({status:"manual_required",last_error:"WhatsApp desconectado; aguardando reconexão",updated_at:new Date().toISOString()}).eq("id",event.id);continue}
-   try{
-    const result=await sendMessage(event.organization_id,settings.group_jid,event.rendered_message,event.media_url);
-    await supabase.from("communication_events").update({status:"sent",sent_at:new Date().toISOString(),attempts:event.attempts+1,last_error:null,updated_at:new Date().toISOString()}).eq("id",event.id);
-   }catch(error){await supabase.from("communication_events").update({status:"manual_required",attempts:event.attempts+1,last_error:error.message,updated_at:new Date().toISOString()}).eq("id",event.id)}
-  }
- }catch(error){logger.error(error,"Queue processing failed")}finally{working=false}
-}
-
-async function restoreSessions(){
- if(!supabase)return;const {data:settings}=await supabase.from("promotion_communication_settings").select("promotions(organization_id)").not("group_jid","is",null);
- const organizations=new Set((settings||[]).map(item=>Array.isArray(item.promotions)?item.promotions[0]?.organization_id:item.promotions?.organization_id).filter(Boolean));
- for(const organization of organizations)connect(organization).catch(error=>logger.error(error));
-}
-
-setInterval(()=>processQueue(),5000);
-app.listen(port,"0.0.0.0",()=>{logger.info(`gateway on ${port}`);restoreSessions()});
+import express from "express";import QRCode from "qrcode";import pino from "pino";import makeWASocket,{DisconnectReason,fetchLatestBaileysVersion,useMultiFileAuthState} from "@whiskeysockets/baileys";import {createClient} from "@supabase/supabase-js";const app=express();app.use(express.json({limit:"2mb"}));const port=Number(process.env.PORT||3100),token=process.env.GATEWAY_TOKEN||"",sessions=new Map(),logger=pino({level:process.env.LOG_LEVEL||"info"}),safe=id=>String(id).replace(/[^a-zA-Z0-9_-]/g,"");const supabase=process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY?createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}}):null;app.use((req,res,next)=>{if(!token||req.headers.authorization!==`Bearer ${token}`)return res.status(401).json({error:"unauthorized"});next()});
+const jidFor=phone=>`${String(phone).replace(/\D/g,"")}@s.whatsapp.net`;
+async function sendMessage(org,jid,text,mediaUrl){const s=sessions.get(safe(org));if(!s?.sock||s.status!=="connected")throw new Error("WhatsApp desconectado");const payload=mediaUrl?{video:{url:mediaUrl},caption:text}:{text};return s.sock.sendMessage(jid,payload)}
+async function productMenu(flow){const {data}=await supabase.from("promotion_products").select("product_id,display_order,products(name)").eq("promotion_id",flow.promotion_id).order("display_order");const rows=data||[];return {rows,text:`🏆 Parabéns! Você foi o vencedor.\n\nDigite o número do produto que você quer:\n${rows.map((r,i)=>`${i+1}. ${r.products?.name||"Produto"}`).join("\n")}`}}
+async function startPostPurchase(flow){const menu=await productMenu(flow);if(!menu.rows.length)throw new Error("Promoção sem produtos");const result=await sendMessage(flow.organization_id,jidFor(flow.phone_e164),menu.text);await supabase.from("post_purchase_flows").update({stage:"awaiting_product",started_at:new Date().toISOString(),last_message_id:result?.key?.id,last_error:null}).eq("id",flow.id)}
+async function handleWinnerReply(org,phone,text){if(!supabase)return false;const {data:flow}=await supabase.from("post_purchase_flows").select("id,organization_id,promotion_id,phone_e164,stage,selected_product_id,promotions(post_draw_pix_amount)").eq("organization_id",org).eq("phone_e164",phone).in("stage",["awaiting_product","awaiting_reward_type","awaiting_address"]).order("created_at",{ascending:false}).limit(1).maybeSingle();if(!flow)return false;const answer=String(text||"").trim();if(flow.stage==="awaiting_product"){const menu=await productMenu(flow),index=Number(answer)-1;if(!Number.isInteger(index)||!menu.rows[index]){await sendMessage(org,jidFor(phone),`Opção inválida.\n\n${menu.text}`);return true}await supabase.from("post_purchase_flows").update({selected_product_id:menu.rows[index].product_id,stage:"awaiting_reward_type"}).eq("id",flow.id);const amount=Number(flow.promotions?.post_draw_pix_amount||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});await sendMessage(org,jidFor(phone),`Você prefere receber o produto escolhido ou um PIX no valor de ${amount}?\n\n1. PIX\n2. Produto`);return true}if(flow.stage==="awaiting_reward_type"){if(answer==="1"){await supabase.from("post_purchase_flows").update({reward_type:"pix",stage:"completed",completed_at:new Date().toISOString()}).eq("id",flow.id);await sendMessage(org,jidFor(phone),"Obrigado! Registramos sua escolha pelo PIX. Vamos organizar o pagamento e entraremos em contato se precisarmos de alguma informação adicional.");return true}if(answer==="2"){await supabase.from("post_purchase_flows").update({reward_type:"product",stage:"awaiting_address"}).eq("id",flow.id);await sendMessage(org,jidFor(phone),"Perfeito. Envie seu endereço completo para entrega, incluindo rua, número, complemento (se houver), bairro, cidade, estado e CEP.");return true}await sendMessage(org,jidFor(phone),"Digite 1 para PIX ou 2 para Produto.");return true}if(flow.stage==="awaiting_address"){if(answer.length<10){await sendMessage(org,jidFor(phone),"Por favor, envie o endereço completo para conseguirmos organizar a entrega.");return true}await supabase.from("post_purchase_flows").update({delivery_address:answer,stage:"completed",completed_at:new Date().toISOString()}).eq("id",flow.id);await sendMessage(org,jidFor(phone),"Obrigado! Recebemos seu endereço e vamos organizar a entrega do seu prêmio. Em breve entraremos em contato se houver alguma atualização.");return true}return false}
+async function connect(org){const id=safe(org),existing=sessions.get(id);if(existing?.status==="connected"||existing?.status==="connecting"||existing?.status==="qr")return existing;const state={status:"connecting",qr:null,phone:null,sock:null,groupCache:new Map()};sessions.set(id,state);const {state:auth,saveCreds}=await useMultiFileAuthState(`/data/${id}`),{version}=await fetchLatestBaileysVersion(),sock=makeWASocket({version,auth,logger,printQRInTerminal:false,syncFullHistory:false,markOnlineOnConnect:false,cachedGroupMetadata:async jid=>state.groupCache.get(jid)});state.sock=sock;sock.ev.on("creds.update",saveCreds);sock.ev.on("messages.upsert",async({messages})=>{for(const m of messages||[]){if(m.key.fromMe||!m.key.remoteJid?.endsWith("@s.whatsapp.net"))continue;const text=m.message?.conversation||m.message?.extendedTextMessage?.text||"",phone=`+${m.key.remoteJid.split("@")[0]}`;try{await handleWinnerReply(id,phone,text)}catch(error){logger.error(error,"post purchase reply failed")}}});sock.ev.on("connection.update",async update=>{if(update.qr){state.qr=await QRCode.toDataURL(update.qr,{margin:1,width:320});state.status="qr"}if(update.connection==="open"){state.status="connected";state.qr=null;state.phone=sock.user?.id?.split(":")[0]||null}if(update.connection==="close"){const code=update.lastDisconnect?.error?.output?.statusCode;state.status="disconnected";state.sock=null;if(code!==DisconnectReason.loggedOut)setTimeout(()=>connect(id).catch(error=>logger.error(error)),3000)}});return state}
+app.get("/health",(_,res)=>res.json({ok:true}));app.post("/sessions/:org/connect",async(req,res)=>{try{const s=await connect(req.params.org);res.json({status:s.status,qr:s.qr,phone:s.phone})}catch(error){res.status(500).json({error:error.message})}});app.get("/sessions/:org/status",(req,res)=>{const s=sessions.get(safe(req.params.org));res.json({status:s?.status||"disconnected",qr:s?.qr||null,phone:s?.phone||null})});app.delete("/sessions/:org",async(req,res)=>{const id=safe(req.params.org),s=sessions.get(id);try{await s?.sock?.logout()}catch{}sessions.delete(id);res.json({ok:true})});app.get("/sessions/:org/groups",async(req,res)=>{const s=sessions.get(safe(req.params.org));if(!s?.sock||s.status!=="connected")return res.status(409).json({error:"WhatsApp desconectado"});try{const groups=await s.sock.groupFetchAllParticipating();res.json(Object.values(groups).map(g=>({id:g.id,subject:g.subject,participants:g.participants?.length||0})))}catch(error){res.status(500).json({error:error.message})}});app.post("/sessions/:org/send",async(req,res)=>{try{const result=await sendMessage(req.params.org,req.body.jid,req.body.text,req.body.mediaUrl);res.json({ok:true,messageId:result?.key?.id})}catch(error){res.status(500).json({error:error.message})}});
+let working=false;async function processQueue(){if(!supabase||working)return;working=true;try{const {data:events}=await supabase.from("communication_events").select("id,organization_id,promotion_id,stage,rendered_message,media_url,attempts,status").in("status",["pending","manual_required"]).lt("attempts",3).lte("scheduled_at",new Date().toISOString()).order("scheduled_at").limit(10);for(const event of events||[]){const {data:settings}=await supabase.from("promotion_communication_settings").select("mode,active,group_jid").eq("promotion_id",event.promotion_id).maybeSingle();if(!settings?.active||!settings.group_jid)continue;if(settings.mode!=="automatic"&&event.stage!=="result"&&event.stage!=="sold_out")continue;const session=sessions.get(safe(event.organization_id));if(!session?.sock||session.status!=="connected")continue;try{await sendMessage(event.organization_id,settings.group_jid,event.rendered_message,event.media_url);await supabase.from("communication_events").update({status:"sent",sent_at:new Date().toISOString(),attempts:event.attempts+1,last_error:null}).eq("id",event.id)}catch(error){await supabase.from("communication_events").update({status:"manual_required",attempts:event.attempts+1,last_error:error.message}).eq("id",event.id)}}const {data:flows}=await supabase.from("post_purchase_flows").select("id,organization_id,promotion_id,phone_e164,stage").eq("stage","pending_send").order("created_at").limit(10);for(const flow of flows||[]){if(!sessions.get(safe(flow.organization_id))?.sock)continue;try{await startPostPurchase(flow)}catch(error){await supabase.from("post_purchase_flows").update({stage:"failed",last_error:error.message}).eq("id",flow.id)}}}catch(error){logger.error(error,"Queue processing failed")}finally{working=false}}
+async function restoreSessions(){if(!supabase)return;const {data:settings}=await supabase.from("promotion_communication_settings").select("promotions(organization_id)").not("group_jid","is",null);const {data:flows}=await supabase.from("post_purchase_flows").select("organization_id").in("stage",["pending_send","awaiting_product","awaiting_reward_type","awaiting_address"]);const organizations=new Set([...(settings||[]).map(item=>Array.isArray(item.promotions)?item.promotions[0]?.organization_id:item.promotions?.organization_id),...(flows||[]).map(f=>f.organization_id)].filter(Boolean));for(const organization of organizations)connect(organization).catch(error=>logger.error(error))}setInterval(()=>processQueue(),5000);app.listen(port,"0.0.0.0",()=>{logger.info(`gateway on ${port}`);restoreSessions()});
