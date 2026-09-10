@@ -11,12 +11,17 @@ function normalizePixKey(value:string,type:string){
  return key.toLowerCase();
 }
 
-export async function saveSettings(formData:FormData){
+async function currentOrganization(){
  const supabase=await createClient();
  const {data:auth}=await supabase.auth.getUser();
  if(!auth.user)redirect("/login");
- const {data:member}=await supabase.from("organization_members").select("organization_id").eq("user_id",auth.user.id).limit(1).maybeSingle();
+ const {data:member}=await supabase.from("organization_members").select("organization_id,role").eq("user_id",auth.user.id).limit(1).maybeSingle();
  if(!member)redirect("/dashboard/configuracoes?error=Organização não encontrada");
+ return {supabase,member};
+}
+
+export async function saveSettings(formData:FormData){
+ const {supabase,member}=await currentOrganization();
  const pixType=String(formData.get("pixKeyType")||"");
  const payload={
   name:String(formData.get("name")||"").trim(),
@@ -31,4 +36,34 @@ export async function saveSettings(formData:FormData){
  if(error)redirect(`/dashboard/configuracoes?error=${encodeURIComponent(error.message)}`);
  revalidatePath("/dashboard/configuracoes");
  redirect("/dashboard/configuracoes?saved=1");
+}
+
+export async function addMember(formData:FormData){
+ const {supabase,member}=await currentOrganization();
+ const email=String(formData.get("email")||"").trim().toLowerCase();
+ const role=String(formData.get("role")||"operator");
+ if(!email)redirect("/dashboard/configuracoes?error=Informe o e-mail do usuário");
+ const {error}=await supabase.rpc("add_org_member_by_email",{target_org:member.organization_id,target_email:email,target_role:role});
+ if(error)redirect(`/dashboard/configuracoes?error=${encodeURIComponent(error.message)}`);
+ revalidatePath("/dashboard/configuracoes");
+ redirect("/dashboard/configuracoes?membersaved=1");
+}
+
+export async function updateMemberRole(formData:FormData){
+ const {supabase,member}=await currentOrganization();
+ const userId=String(formData.get("userId")||"");
+ const role=String(formData.get("role")||"operator");
+ const {error}=await supabase.rpc("update_org_member_role",{target_org:member.organization_id,target_user:userId,target_role:role});
+ if(error)redirect(`/dashboard/configuracoes?error=${encodeURIComponent(error.message)}`);
+ revalidatePath("/dashboard/configuracoes");
+ redirect("/dashboard/configuracoes?membersaved=1");
+}
+
+export async function removeMember(formData:FormData){
+ const {supabase,member}=await currentOrganization();
+ const userId=String(formData.get("userId")||"");
+ const {error}=await supabase.rpc("remove_org_member",{target_org:member.organization_id,target_user:userId});
+ if(error)redirect(`/dashboard/configuracoes?error=${encodeURIComponent(error.message)}`);
+ revalidatePath("/dashboard/configuracoes");
+ redirect("/dashboard/configuracoes?memberremoved=1");
 }
