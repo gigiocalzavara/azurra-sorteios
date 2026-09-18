@@ -1,6 +1,7 @@
 import express from "express";
 import QRCode from "qrcode";
 import pino from "pino";
+import {rm} from "node:fs/promises";
 import makeWASocket,{DisconnectReason,fetchLatestBaileysVersion,useMultiFileAuthState} from "@whiskeysockets/baileys";
 import {createClient} from "@supabase/supabase-js";
 
@@ -11,6 +12,7 @@ const token=process.env.GATEWAY_TOKEN||"";
 const sessions=new Map();
 const logger=pino({level:process.env.LOG_LEVEL||"info"});
 const safe=id=>String(id).replace(/[^a-zA-Z0-9_-]/g,"");
+const sessionPath=id=>`/data/${safe(id)}`;
 const digits=value=>String(value||"").replace(/\D/g,"");
 const supabase=process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY
   ?createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}})
@@ -170,7 +172,7 @@ async function connect(org){
  if(existing?.status==="connected"||existing?.status==="connecting"||existing?.status==="qr")return existing;
  const state={status:"connecting",qr:null,phone:null,sock:null,groupCache:new Map(),groupList:null,groupListFetchedAt:0};
  sessions.set(id,state);
- const {state:auth,saveCreds}=await useMultiFileAuthState(`/data/${id}`);
+ const {state:auth,saveCreds}=await useMultiFileAuthState(sessionPath(id));
  const {version}=await fetchLatestBaileysVersion();
  const sock=makeWASocket({version,auth,logger,printQRInTerminal:false,syncFullHistory:false,markOnlineOnConnect:false,cachedGroupMetadata:async jid=>state.groupCache.get(jid)});
  state.sock=sock;
@@ -200,7 +202,7 @@ app.post("/sessions/:org/connect",async(req,res)=>{try{const s=await connect(req
 app.get("/sessions/:org/status",(req,res)=>{const s=sessions.get(safe(req.params.org));res.json({status:s?.status||"disconnected",qr:s?.qr||null,phone:s?.phone||null})});
 app.get("/sessions/:org/worker",(req,res)=>{const s=sessions.get(safe(req.params.org));res.json({configured:Boolean(supabase),worker,sessionStatus:s?.status||"disconnected",phone:s?.phone||null})});
 app.post("/sessions/:org/process",async(req,res)=>{try{await processQueue(req.params.org);res.json({ok:true,worker})}catch(error){res.status(500).json({error:error.message,worker})}});
-app.delete("/sessions/:org",async(req,res)=>{const id=safe(req.params.org),s=sessions.get(id);try{await s?.sock?.logout()}catch{}sessions.delete(id);res.json({ok:true})});
+app.delete("/sessions/:org",async(req,res)=>{const id=safe(req.params.org),s=sessions.get(id);try{await s?.sock?.logout()}catch{}try{await rm(sessionPath(id),{recursive:true,force:true})}catch{}sessions.delete(id);res.json({ok:true})});
 app.get("/sessions/:org/groups",async(req,res)=>{const s=sessions.get(safe(req.params.org));if(!s?.sock||s.status!=="connected")return res.status(409).json({error:"WhatsApp desconectado"});try{const now=Date.now();if(s.groupList&&now-s.groupListFetchedAt<60000)return res.json(s.groupList);const groups=await s.sock.groupFetchAllParticipating();const list=Object.values(groups).map(g=>({id:g.id,subject:g.subject,participants:g.participants?.length||0}));s.groupList=list;s.groupListFetchedAt=now;res.json(list)}catch(error){if(String(error?.message||error).includes("rate-overlimit")&&s.groupList)return res.json(s.groupList);res.status(500).json({error:error.message})}});
 app.post("/sessions/:org/send",async(req,res)=>{try{const result=req.body.phone?await sendDirectMessage(req.params.org,req.body.phone,req.body.text):await sendMessage(req.params.org,req.body.jid,req.body.text,req.body.mediaUrl);res.json({ok:true,messageId:result?.key?.id})}catch(error){res.status(500).json({error:error.message})}});
 
