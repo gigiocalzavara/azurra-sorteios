@@ -13,6 +13,7 @@ const sessions=new Map();
 const logger=pino({level:process.env.LOG_LEVEL||"info"});
 const safe=id=>String(id).replace(/[^a-zA-Z0-9_-]/g,"");
 const sessionPath=id=>`/data/${safe(id)}`;
+const connectionTimeoutMs=30000;
 const digits=value=>String(value||"").replace(/\D/g,"");
 const supabase=process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY
   ?createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}})
@@ -169,40 +170,56 @@ async function handleWinnerReply(org,phone,text){
 
 async function connect(org){
  const id=safe(org),existing=sessions.get(id);
- if(existing?.status==="connected"||existing?.status==="connecting"||existing?.status==="qr")return existing;
- const state={status:"connecting",qr:null,phone:null,sock:null,groupCache:new Map(),groupList:null,groupListFetchedAt:0};
+ if(existing?.status==="connected"||existing?.status==="qr")return existing;
+ if(existing?.status==="connecting"&&Date.now()-existing.startedAt<connectionTimeoutMs)return existing;
+ if(existing?.status==="connecting"){
+  logger.warn({organization:id},"Discarding stale WhatsApp connection attempt");
+  try{existing.sock?.end?.(new Error("stale connection attempt"))}catch{}
+  sessions.delete(id);
+ }
+ const state={status:"connecting",qr:null,phone:null,sock:null,startedAt:Date.now(),lastError:null,groupCache:new Map(),groupList:null,groupListFetchedAt:0};
  sessions.set(id,state);
- const {state:auth,saveCreds}=await useMultiFileAuthState(sessionPath(id));
- const {version}=await fetchLatestBaileysVersion();
- const sock=makeWASocket({version,auth,logger,printQRInTerminal:false,syncFullHistory:false,markOnlineOnConnect:false,cachedGroupMetadata:async jid=>state.groupCache.get(jid)});
- state.sock=sock;
- sock.ev.on("creds.update",saveCreds);
- sock.ev.on("messages.upsert",async({messages})=>{for(const m of messages||[]){
+ try{
+  const {state:auth,saveCreds}=await useMultiFileAuthState(sessionPath(id));
+  const {version}=await fetchLatestBaileysVersion();
+  const sock=makeWASocket({version,auth,logger,printQRInTerminal:false,syncFullHistory:false,markOnlineOnConnect:false,cachedGroupMetadata:async jid=>state.groupCache.get(jid)});
+  state.sock=sock;
+  sock.ev.on("creds.update",saveCreds);
+  sock.ev.on("messages.upsert",async({messages})=>{for(const m of messages||[]){
   if(m.key.fromMe)continue;
   const remote=inboundPhoneJid(m),text=inboundText(m.message);
   if(!remote||!text){logger.debug({organization:id,remoteJid:m.key.remoteJid,remoteJidAlt:m.key.remoteJidAlt,messageTypes:Object.keys(unwrapMessage(m.message))},"ignored inbound message");continue;}
   const phone=`+${remote.split("@")[0].split(":")[0]}`;
   try{await handleWinnerReply(id,phone,text)}catch(error){logger.error({organization:id,phone,error:error?.message},"post purchase reply failed")}
- }});
- sock.ev.on("connection.update",async update=>{
-  if(update.qr){state.qr=await QRCode.toDataURL(update.qr,{margin:1,width:320});state.status="qr";}
-  if(update.connection==="open"){state.status="connected";state.qr=null;state.phone=sock.user?.id?.split(":")[0]||null;state.groupList=null;state.groupListFetchedAt=0;logger.info({organization:id},"WhatsApp connected");}
-  if(update.connection==="close"){
-   const code=update.lastDisconnect?.error?.output?.statusCode;
-   state.status="disconnected";state.sock=null;state.groupList=null;state.groupListFetchedAt=0;
-   logger.warn({organization:id,code},"WhatsApp disconnected");
-   if(code!==DisconnectReason.loggedOut)setTimeout(()=>connect(id).catch(error=>logger.error(error)),3000);
-  }
- });
- return state;
+  }});
+  sock.ev.on("connection.update",async update=>{
+   if(sessions.get(id)!==state)return;
+   if(update.qr){state.qr=await QRCode.toDataURL(update.qr,{margin:1,width:320});state.status="qr";state.lastError=null;}
+   if(update.connection==="open"){state.status="connected";state.qr=null;state.phone=sock.user?.id?.split(":")[0]||null;state.lastError=null;state.groupList=null;state.groupListFetchedAt=0;logger.info({organization:id},"WhatsApp connected");}
+   if(update.connection==="close"){
+    const code=update.lastDisconnect?.error?.output?.statusCode;
+    state.status="disconnected";state.sock=null;state.groupList=null;state.groupListFetchedAt=0;state.lastError=`Conexão encerrada${code?` (${code})`:""}`;
+    logger.warn({organization:id,code},"WhatsApp disconnected");
+    if(code===DisconnectReason.loggedOut){
+     try{await rm(sessionPath(id),{recursive:true,force:true})}catch{}
+     sessions.delete(id);
+    }else setTimeout(()=>connect(id).catch(error=>logger.error(error)),3000);
+   }
+  });
+  return state;
+ }catch(error){
+  if(sessions.get(id)===state)sessions.delete(id);
+  try{state.sock?.end?.(error)}catch{}
+  throw error;
+ }
 }
 
 app.get("/health",(_,res)=>res.json({ok:true,supabaseConfigured:Boolean(supabase),worker}));
 app.post("/sessions/:org/connect",async(req,res)=>{try{const s=await connect(req.params.org);res.json({status:s.status,qr:s.qr,phone:s.phone})}catch(error){res.status(500).json({error:error.message})}});
-app.get("/sessions/:org/status",(req,res)=>{const s=sessions.get(safe(req.params.org));res.json({status:s?.status||"disconnected",qr:s?.qr||null,phone:s?.phone||null})});
+app.get("/sessions/:org/status",(req,res)=>{const s=sessions.get(safe(req.params.org));res.json({status:s?.status||"disconnected",qr:s?.qr||null,phone:s?.phone||null,error:s?.lastError||null})});
 app.get("/sessions/:org/worker",(req,res)=>{const s=sessions.get(safe(req.params.org));res.json({configured:Boolean(supabase),worker,sessionStatus:s?.status||"disconnected",phone:s?.phone||null})});
 app.post("/sessions/:org/process",async(req,res)=>{try{await processQueue(req.params.org);res.json({ok:true,worker})}catch(error){res.status(500).json({error:error.message,worker})}});
-app.delete("/sessions/:org",async(req,res)=>{const id=safe(req.params.org),s=sessions.get(id);try{await s?.sock?.logout()}catch{}try{await rm(sessionPath(id),{recursive:true,force:true})}catch{}sessions.delete(id);res.json({ok:true})});
+app.delete("/sessions/:org",async(req,res)=>{const id=safe(req.params.org),s=sessions.get(id);sessions.delete(id);try{await s?.sock?.logout()}catch{}try{await rm(sessionPath(id),{recursive:true,force:true})}catch{}res.json({ok:true})});
 app.get("/sessions/:org/groups",async(req,res)=>{const s=sessions.get(safe(req.params.org));if(!s?.sock||s.status!=="connected")return res.status(409).json({error:"WhatsApp desconectado"});try{const now=Date.now();if(s.groupList&&now-s.groupListFetchedAt<60000)return res.json(s.groupList);const groups=await s.sock.groupFetchAllParticipating();const list=Object.values(groups).map(g=>({id:g.id,subject:g.subject,participants:g.participants?.length||0}));s.groupList=list;s.groupListFetchedAt=now;res.json(list)}catch(error){if(String(error?.message||error).includes("rate-overlimit")&&s.groupList)return res.json(s.groupList);res.status(500).json({error:error.message})}});
 app.post("/sessions/:org/send",async(req,res)=>{try{const result=req.body.phone?await sendDirectMessage(req.params.org,req.body.phone,req.body.text):await sendMessage(req.params.org,req.body.jid,req.body.text,req.body.mediaUrl);res.json({ok:true,messageId:result?.key?.id})}catch(error){res.status(500).json({error:error.message})}});
 
@@ -241,30 +258,3 @@ async function processQueue(onlyOrg=null){
   const {data:flows,error:flowsError}=await flowQuery;
   if(flowsError)throw new Error(`Fila pós-venda: ${flowsError.message}`);
   for(const flow of flows||[]){
-   let session=sessions.get(safe(flow.organization_id));
-   if(!session||session.status==="disconnected"){try{session=await connect(flow.organization_id)}catch(error){logger.error(error,"post-sale session restore failed");continue;}}
-   if(!session?.sock||session.status!=="connected")continue;
-   try{
-    await startPostPurchase(flow);
-    worker.lastProcessed++;worker.totalSent++;
-   }catch(error){
-    logger.error({flow:flow.id,message:error.message},"post-sale send failed");
-    await supabase.from("post_purchase_flows").update({stage:"failed",last_error:error.message,updated_at:new Date().toISOString()}).eq("id",flow.id);
-   }
-  }
-  worker.lastSuccessAt=new Date().toISOString();worker.lastError=null;
- }catch(error){worker.lastError=error.message;logger.error(error,"Queue processing failed");}
- finally{working=false;worker.running=false;}
-}
-
-async function restoreSessions(){
- if(!supabase)return;
- const {data:settings,error:settingsError}=await supabase.from("promotion_communication_settings").select("promotions(organization_id)").not("group_jid","is",null);
- const {data:flows,error:flowsError}=await supabase.from("post_purchase_flows").select("organization_id").in("stage",["pending_send","failed","awaiting_product","awaiting_reward_type","awaiting_address"]);
- if(settingsError||flowsError){logger.error({settingsError,flowsError},"restore sessions query failed");return;}
- const organizations=new Set([...(settings||[]).map(item=>Array.isArray(item.promotions)?item.promotions[0]?.organization_id:item.promotions?.organization_id),...(flows||[]).map(f=>f.organization_id)].filter(Boolean));
- for(const organization of organizations)connect(organization).catch(error=>logger.error(error));
-}
-
-setInterval(()=>processQueue(),5000);
-app.listen(port,"0.0.0.0",()=>{logger.info(`gateway on ${port}`);restoreSessions();setTimeout(()=>processQueue(),1500)});
