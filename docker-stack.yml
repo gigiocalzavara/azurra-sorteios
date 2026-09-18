@@ -40,7 +40,7 @@ services:
         - traefik.http.services.azurra-sorteios.loadbalancer.server.port=3000
 
   whatsapp:
-    image: ghcr.io/gigiocalzavara/azurra-sorteios-whatsapp:latest
+    image: ghcr.io/gigiocalzavara/azurra-sorteios-whatsapp:sha-9a7a65c
     networks:
       - azurranet
     environment:
