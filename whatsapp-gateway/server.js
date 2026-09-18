@@ -33,6 +33,39 @@ function phonesEquivalent(a,b){
  return phoneCandidates(b).some(value=>left.has(value));
 }
 
+function unwrapMessage(message){
+ let current=message;
+ for(let depth=0;depth<5&&current;depth++){
+  const wrapped=current.ephemeralMessage?.message
+   ||current.viewOnceMessage?.message
+   ||current.viewOnceMessageV2?.message
+   ||current.viewOnceMessageV2Extension?.message
+   ||current.documentWithCaptionMessage?.message;
+  if(!wrapped)break;
+  current=wrapped;
+ }
+ return current||{};
+}
+
+function inboundText(message){
+ const content=unwrapMessage(message);
+ return content.conversation
+  ||content.extendedTextMessage?.text
+  ||content.buttonsResponseMessage?.selectedDisplayText
+  ||content.buttonsResponseMessage?.selectedButtonId
+  ||content.listResponseMessage?.singleSelectReply?.selectedRowId
+  ||content.listResponseMessage?.title
+  ||content.templateButtonReplyMessage?.selectedDisplayText
+  ||content.templateButtonReplyMessage?.selectedId
+  ||content.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson
+  ||"";
+}
+
+function inboundPhoneJid(message){
+ const candidates=[message?.key?.remoteJidAlt,message?.key?.participantAlt,message?.key?.remoteJid,message?.key?.participant];
+ return candidates.find(jid=>String(jid||"").endsWith("@s.whatsapp.net"))||"";
+}
+
 async function resolveDirectJid(org,phone){
  const s=sessions.get(safe(org));
  if(!s?.sock||s.status!=="connected")throw new Error("WhatsApp desconectado");
@@ -87,12 +120,24 @@ async function handleWinnerReply(org,phone,text){
  if(!flow)return false;
  const answer=String(text||"").trim();
  if(flow.stage==="awaiting_product"){
-  const menu=await productMenu(flow),index=Number(answer)-1;
+  const menu=await productMenu(flow);
+  const numericMatch=answer.match(/\d+/);
+  let index=numericMatch?Number(numericMatch[0])-1:-1;
+  if(!menu.rows[index]){
+   const normalized=answer.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+   index=menu.rows.findIndex(row=>{
+    const product=Array.isArray(row.products)?row.products[0]:row.products;
+    const name=String(product?.name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+    return name&&(normalized===name||normalized.includes(name));
+   });
+  }
   if(!Number.isInteger(index)||!menu.rows[index]){await sendDirectMessage(org,flow.phone_e164,`Opção inválida.\n\n${menu.text}`);return true;}
-  await supabase.from("post_purchase_flows").update({selected_product_id:menu.rows[index].product_id,stage:"awaiting_reward_type"}).eq("id",flow.id);
+  const selected=Array.isArray(menu.rows[index].products)?menu.rows[index].products[0]:menu.rows[index].products;
+  const {error:updateError}=await supabase.from("post_purchase_flows").update({selected_product_id:menu.rows[index].product_id,stage:"awaiting_reward_type",last_error:null,updated_at:new Date().toISOString()}).eq("id",flow.id);
+  if(updateError)throw updateError;
   const promo=Array.isArray(flow.promotions)?flow.promotions[0]:flow.promotions;
   const amount=Number(promo?.post_draw_pix_amount||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-  await sendDirectMessage(org,flow.phone_e164,`Você prefere receber o produto escolhido ou um PIX no valor de ${amount}?\n\n1. PIX\n2. Produto`);
+  await sendDirectMessage(org,flow.phone_e164,`✅ Produto escolhido: *${selected?.name||"Produto"}*\n\nVocê prefere receber esse produto ou um PIX no valor de *${amount}*?\n\n1. PIX\n2. Produto`);
   return true;
  }
  if(flow.stage==="awaiting_reward_type"){
@@ -130,7 +175,13 @@ async function connect(org){
  const sock=makeWASocket({version,auth,logger,printQRInTerminal:false,syncFullHistory:false,markOnlineOnConnect:false,cachedGroupMetadata:async jid=>state.groupCache.get(jid)});
  state.sock=sock;
  sock.ev.on("creds.update",saveCreds);
- sock.ev.on("messages.upsert",async({messages})=>{for(const m of messages||[]){if(m.key.fromMe)continue;const remote=m.key.remoteJidAlt||m.key.remoteJid||"";if(!remote.endsWith("@s.whatsapp.net"))continue;const text=m.message?.conversation||m.message?.extendedTextMessage?.text||"";if(!text)continue;const phone=`+${remote.split("@")[0]}`;try{await handleWinnerReply(id,phone,text)}catch(error){logger.error(error,"post purchase reply failed")}}});
+ sock.ev.on("messages.upsert",async({messages})=>{for(const m of messages||[]){
+  if(m.key.fromMe)continue;
+  const remote=inboundPhoneJid(m),text=inboundText(m.message);
+  if(!remote||!text){logger.debug({organization:id,remoteJid:m.key.remoteJid,remoteJidAlt:m.key.remoteJidAlt,messageTypes:Object.keys(unwrapMessage(m.message))},"ignored inbound message");continue;}
+  const phone=`+${remote.split("@")[0].split(":")[0]}`;
+  try{await handleWinnerReply(id,phone,text)}catch(error){logger.error({organization:id,phone,error:error?.message},"post purchase reply failed")}
+ }});
  sock.ev.on("connection.update",async update=>{
   if(update.qr){state.qr=await QRCode.toDataURL(update.qr,{margin:1,width:320});state.status="qr";}
   if(update.connection==="open"){state.status="connected";state.qr=null;state.phone=sock.user?.id?.split(":")[0]||null;state.groupList=null;state.groupListFetchedAt=0;logger.info({organization:id},"WhatsApp connected");}
