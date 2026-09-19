@@ -40,7 +40,7 @@ services:
         - traefik.http.services.azurra-sorteios.loadbalancer.server.port=3000
 
   whatsapp:
-    image: ghcr.io/gigiocalzavara/azurra-sorteios-whatsapp:sha-9a7a65c
+    image: ghcr.io/gigiocalzavara/azurra-sorteios-whatsapp:latest
     networks:
       - azurranet
     environment:
@@ -50,10 +50,24 @@ services:
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
     volumes:
       - azurra_sorteios_whatsapp_sessions:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/health',{headers:{authorization:'Bearer '+process.env.GATEWAY_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 20s
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
+        delay: 5s
 
   lead-capture:
     image: ghcr.io/gigiocalzavara/azurra-sorteios-lead-capture:latest
