@@ -72,16 +72,16 @@ export default async function Page({ params, searchParams }: Props) {
     <main className={styles.main}>
       <div className={styles.heading}>
         <div>
-          <h1>Configurar promoção</h1>
+          <h1>Configurar campanha</h1>
           <p>{promotion.name}</p>
         </div>
-        <Link href="/dashboard/promocoes">Sair da configuração</Link>
+        <Link href="/dashboard/promocoes">Voltar às campanhas</Link>
       </div>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
-        <div style={stepStyle(false, true)}><CheckCircle2 size={18} /> 01. Dados da promoção</div>
-        <div style={stepStyle(step === 2, communicationOk)}><MessageCircle size={18} /> 02. Comunicação</div>
-        <div style={stepStyle(step === 3, false)}><Rocket size={18} /> 03. Revisão e publicação</div>
+      <div className={styles.stepper}>
+        <div className={`${styles.stepCard} ${styles.stepDone}`}><CheckCircle2 size={18}/> 01. Dados da campanha</div>
+        <div className={`${styles.stepCard} ${step===2?styles.stepActive:""} ${communicationOk?styles.stepDone:""}`}><MessageCircle size={18}/> 02. Comunicação</div>
+        <div className={`${styles.stepCard} ${step===3?styles.stepActive:""}`}><Rocket size={18}/> 03. Revisão e publicação</div>
       </div>
 
       {query.error ? <div className={styles.alertError}>{query.error}</div> : null}
@@ -89,9 +89,9 @@ export default async function Page({ params, searchParams }: Props) {
       {step === 2 ? (
         <>
           <section className={styles.panel} style={{ marginBottom: 20 }}>
-            <h2>Comunicação da promoção</h2>
+            <h2>Comunicação da campanha</h2>
             <p style={{ marginTop: 6 }}>
-              Esta configuração será vinculada exclusivamente à promoção <strong>{promotion.name}</strong>.
+              Esta configuração será vinculada exclusivamente à campanha <strong>{promotion.name}</strong>.
             </p>
             <p style={{ marginTop: 6 }}>
               Conecte o WhatsApp, escolha o grupo e depois defina como as mensagens serão enviadas.
@@ -135,16 +135,16 @@ export default async function Page({ params, searchParams }: Props) {
         <>
           <section className={styles.panel}>
             <h2>Checklist antes de publicar</h2>
-            <p>A promoção só será publicada quando todos os itens obrigatórios estiverem concluídos.</p>
-            <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
+            <p>A campanha só será publicada quando todos os itens obrigatórios estiverem concluídos.</p>
+            <div className={styles.checkList}>
               {[
-                [dataOk, "Dados da promoção completos", `${promotion.quota_quantity} cotas • ${Number(promotion.quota_price).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} por cota`],
+                [dataOk, "Dados da campanha completos", `${promotion.quota_quantity} cotas • ${Number(promotion.quota_price).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} por cota`],
                 [(productsCount || 0) > 0, "Produtos vinculados", (products || []).map((p: any) => Array.isArray(p.products) ? p.products[0]?.name : p.products?.name).filter(Boolean).join(", ") || "Nenhum produto"],
                 [pixOk, "PIX da organização configurado", org?.pix_key || "Chave PIX ausente"],
                 [Boolean(setting?.group_jid), "Grupo de WhatsApp vinculado", setting?.group_name || "Nenhum grupo"],
                 [Boolean(setting?.mode), "Modo de comunicação definido", setting?.mode ? modeLabel[setting.mode] || setting.mode : "Não definido"],
               ].map(([ok, title, detail]) => (
-                <div key={String(title)} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: 16, border: "1px solid #e1e5ef", borderRadius: 14 }}>
+                <div key={String(title)} className={styles.checkItem}>
                   {ok ? <CheckCircle2 size={22} /> : <Circle size={22} />}
                   <div><strong>{String(title)}</strong><div style={{ marginTop: 4, opacity: .72 }}>{String(detail)}</div></div>
                 </div>
@@ -158,7 +158,7 @@ export default async function Page({ params, searchParams }: Props) {
               <div>
                 <h3 style={{ margin: 0 }}>Publicação</h3>
                 <p style={{ margin: "4px 0 0" }}>
-                  Ao publicar, a promoção fica disponível para compra e o evento de lançamento é criado para o grupo vinculado.
+                  Ao publicar, a campanha fica disponível para compra e o evento de lançamento é criado para o grupo vinculado.
                 </p>
               </div>
             </div>
