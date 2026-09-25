@@ -859,7 +859,21 @@ async function processQueue(onlyOrg = null) {
         continue;
       }
 
-      if (!settings?.active || !settings.group_jid) continue;
+      if (!settings?.active) continue;
+
+      if (!settings.group_jid || settings.mode === "manual") {
+        await supabase
+          .from("communication_events")
+          .update({
+            status: "manual_required",
+            last_error: !settings.group_jid
+              ? "Sem grupo de WhatsApp vinculado. Envie manualmente pelo fluxo da campanha."
+              : "Campanha em modo manual / contingência.",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", event.id);
+        continue;
+      }
 
       if (
         settings.mode !== "automatic" &&
@@ -867,6 +881,14 @@ async function processQueue(onlyOrg = null) {
         event.stage !== "result" &&
         event.stage !== "sold_out"
       ) {
+        await supabase
+          .from("communication_events")
+          .update({
+            status: "manual_required",
+            last_error: "Aguardando envio assistido pelo operador.",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", event.id);
         continue;
       }
 
@@ -880,11 +902,29 @@ async function processQueue(onlyOrg = null) {
             { organization: event.organization_id, error: error?.message },
             "Session restore failed",
           );
+          await supabase
+            .from("communication_events")
+            .update({
+              status: "manual_required",
+              last_error: "WhatsApp indisponível. Envie manualmente pelo fluxo da campanha.",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", event.id);
           continue;
         }
       }
 
-      if (!session?.sock || session.status !== "connected") continue;
+      if (!session?.sock || session.status !== "connected") {
+        await supabase
+          .from("communication_events")
+          .update({
+            status: "manual_required",
+            last_error: "WhatsApp desconectado. Envie manualmente pelo fluxo da campanha.",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", event.id);
+        continue;
+      }
 
       try {
         await sendMessage(
