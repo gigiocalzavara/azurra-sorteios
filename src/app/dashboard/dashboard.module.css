@@ -102,6 +102,7 @@
 
 @media (max-width: 900px) {
   .sidebar { display: none; }
+  .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; overflow: visible; }
   .content { width: 100%; margin-left: 0; }
   .topbar { height: 76px; padding: 0 18px; justify-content: space-between; }
   .desktopUser { display: none; }
