@@ -1,4 +1,4 @@
-:global(:root) {
+.frame {
   --azurra-primary: #6900ff;
   --azurra-primary-soft: #f2ebff;
   --azurra-accent: #00d6e8;
@@ -6,8 +6,7 @@
   --azurra-muted: #6f7480;
   --azurra-line: #e4e5e9;
   --azurra-bg: #f8f9fb;
-}
-.frame { width: 100%; min-width: 0; min-height: 100vh; overflow-x: clip; background: var(--azurra-bg); color: var(--azurra-ink); }
+ width: 100%; min-width: 0; min-height: 100vh; overflow-x: clip; background: var(--azurra-bg); color: var(--azurra-ink); }
 .sidebar { position: fixed; inset: 0 auto 0 0; width: 258px; padding: 26px 18px 20px; background: #fff; border-right: 1px solid var(--azurra-line); display: flex; flex-direction: column; z-index: 30; }
 .logo, .mobileLogo { color: #15171d; font-weight: 950; letter-spacing: -.045em; text-decoration: none; }
 .logo { display: block; padding: 5px 14px 31px; font-size: 21px; }
